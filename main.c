@@ -1,6 +1,5 @@
 #include "functions.h"
 
-#define MAX_INPUT_LENGTH 1024
 
 int main()
 {
