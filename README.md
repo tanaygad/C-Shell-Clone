@@ -2,3 +2,6 @@
 # Description
 
 # Assumptions
+  1. Permissions to create and modify file in the home directory.
+  2. All charachter arrays have been assigned 4096 bytes of memory and command lengths or file/directory names above this limit may fail.
+  3. 
