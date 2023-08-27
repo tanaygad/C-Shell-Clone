@@ -17,10 +17,11 @@
 #include <unistd.h> // Add this line to include the necessary header
 #include <limits.h>
 
-// #define PATH_MAX 1024
-#define MAX_INPUT_LENGTH 1024
-#define MAX_ARGS 1024
+#define MAX_INPUT_LENGTH 4096
+#define MAX_ARGS 4096
 #define PATH_MAX 4096
+#define MAX_INPUT_LENGTH 4096
+
 
 #define COLOR_RESET "\033[0m"
 #define COLOR_RED "\033[31m"
