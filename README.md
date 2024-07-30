@@ -7,3 +7,8 @@
   3. Pastevents stores invalid commands also.
   4. & doesnt wrok with user defined commands.
   5. All paths output are absolute.
+  6. All commands should be space seperated including piping and semicolon etc.
+  7. Neonate must be terminated with x.
+  8. iMan outputs html code
+  9. Assume proc/loadavg contains latest pid.
+  10. Seek also searches hidden files.

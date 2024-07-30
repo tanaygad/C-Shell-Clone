@@ -47,6 +47,7 @@ void load_history(char *filename, char *history[], int history_size, int *histor
 
 void print_history(char *history[], int history_size)
 {
+    
     for (int i = 0; i < history_size; ++i)
     {
         for (int j = 0; j < 4096; j++)

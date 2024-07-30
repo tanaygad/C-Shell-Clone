@@ -20,7 +20,7 @@ void seek_directory(const char *target_name, const char *target_directory, int d
 
     while ((entry = readdir(dir)) != NULL)
     {
-
+        
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
         {
             continue; // Skip current directory and parent directory entries

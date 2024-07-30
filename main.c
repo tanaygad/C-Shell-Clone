@@ -1,8 +1,47 @@
 #include "functions.h"
 
+int running_foreground_process = 0;
+void sigint_handler(int sig)
+{
+    if (running_foreground_process != 0)
+    {
+        int d = kill(running_foreground_process, SIGINT);
 
+        // printf("%d\n",d);
+    }
+    // fflush(stdout);
+}
+void sigtstp_handler(int sig)
+{
+    if (running_foreground_process != 0)
+    {
+        // send_ping(running_foreground_process,19);
+        int d = kill(running_foreground_process, SIGTSTP);
+        // printf("%d\n", d);
+        // fflush(stdout);
+        // printf("%d\n", running_foreground_process);
+    }
+}
+void sigkill_handler(int sig)
+{
+    kill(0, SIGTERM);
+    exit(0);
+}
+void sigpipe_handler(int sig)
+{
+    printf("oops\n");
+}
 int main()
 {
+    int savestdin = dup(STDIN_FILENO);
+
+    int activities_saved_count = 0;
+    char **activities_saved;
+    activities_saved = (char **)malloc(sizeof(char *) * 100);
+    for (int i = 0; i < 100; i++)
+    {
+        activities_saved[i] = (char *)malloc(sizeof(char) * MAX_INPUT_LENGTH);
+    }
     char input[MAX_INPUT_LENGTH];
     char current_dir[PATH_MAX];
     char home_dir[PATH_MAX];
@@ -42,12 +81,23 @@ int main()
     int bgprocessids[10000];
     char *bgcommands[10000];
     int bgcount = 0;
-
+    signal(SIGINT, sigint_handler);
+    signal(SIGTSTP, sigtstp_handler);
+    signal(SIGPIPE, sigpipe_handler);
+    // signal(SIGKILL,sigkill_handler);
     while (1)
     {
+        for (int i = 0; i < bgcount; i++)
+        {
+            // printf("%d\n",bgprocessids[i]);
+            waitpid(bgprocessids[i], NULL, WNOHANG);
+        }
         prompt(home_dir);
         // for (int i=0;i<4096;i++) input[i]='\0';
-        fgets(input, sizeof(input), stdin);
+        if (fgets(input, sizeof(input), stdin) == NULL)
+        {
+            kill(-getpid(), SIGKILL);
+        }
         // Remove newline character from input
         input[strcspn(input, "\n")] = 0;
         // for (int i=0;i<4096;i++)
@@ -72,12 +122,14 @@ int main()
         for (int iii = 0; iii < tkc2; iii++)
         {
             tokens[token_count++] = strdup(alltokens[iii]);
-            if (strcmp(alltokens[iii], ";") == 0 || strcmp(alltokens[iii], "&") == 0)
+            if (strcmp(alltokens[iii], ";") == 0 || strcmp(alltokens[iii], "&") == 0 || strcmp(alltokens[iii], "|") == 0)
             {
                 if (strcmp(alltokens[iii], ";") == 0)
                     token_delimiting_operators = 1;
                 else if (strcmp(alltokens[iii], "&") == 0)
                     token_delimiting_operators = 2;
+                else if (strcmp(alltokens[iii], "|") == 0)
+                    token_delimiting_operators = 3;
                 is_delimitor = 1;
                 // func();
                 token_count--;
@@ -90,10 +142,75 @@ int main()
             }
         }
     doeverything:;
+        int savestdout = dup(STDOUT_FILENO);
         tokens[token_count] = NULL;
+        int commandtokens = token_count;
+        int pipe_count = 0;
+        int was_pipe;
+
+        for (int i = 0; i < token_count - 1; i++)
+        {
+            // printf("x%sx\n",tokens[i]);
+            int fd = 1;
+            if (strcmp(tokens[i], ">>") == 0)
+            {
+                if (i < commandtokens)
+                    commandtokens = i;
+                fd = open(tokens[i + 1], O_WRONLY | O_CREAT | O_APPEND, 0644);
+                dup2(fd, STDOUT_FILENO);
+            }
+            else if (strcmp(tokens[i], ">") == 0)
+            {
+                if (i < commandtokens)
+                    commandtokens = i;
+                fd = open(tokens[i + 1], O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                dup2(fd, STDOUT_FILENO);
+            }
+            else if (strcmp(tokens[i], "<") == 0)
+            {
+                if (i < commandtokens)
+                    commandtokens = i;
+                fd = open(tokens[i + 1], O_RDONLY);
+                dup2(fd, STDIN_FILENO);
+            }
+            if (fd == -1)
+            {
+                printf("Cannot open file\n");
+                goto end;
+            }
+            // close(fd);
+        }
+        int ret = -1;
+        token_count = commandtokens;
+        tokens[token_count] = NULL;
+        if (token_delimiting_operators == 3)
+        {
+            int piping[2];
+            int a = pipe(piping);
+            ret = fork();
+            if (ret == 0)
+            {
+                dup2(piping[1], STDOUT_FILENO);
+                close(savestdin);
+                close(savestdout);
+                close(piping[1]);
+                close(piping[0]);
+            }
+            else
+            {
+                waitpid(ret, NULL, 1);
+
+                close(piping[1]);
+                dup2(piping[0], STDIN_FILENO);
+                close(piping[0]);
+                goto end;
+            }
+            // token_delimiting_operators=1;
+        }
         if (token_delimiting_operators == 2)
         {
             pid_t ppid = fork();
+
             if (ppid == 0)
             {
                 if (execvp(tokens[0], tokens) != 0)
@@ -101,6 +218,18 @@ int main()
                     perror("Invalid Command\n");
                     exit(EXIT_FAILURE);
                 }
+            }
+            else
+            {
+                sprintf(activities_saved[activities_saved_count], "%d ", ppid);
+                strcat(activities_saved[activities_saved_count], ": ");
+                for (int i = 0; i < token_count; i++)
+                {
+                    printf("%s\n", tokens[i]);
+                    strcat(activities_saved[activities_saved_count], tokens[i]);
+                    strcat(activities_saved[activities_saved_count], " ");
+                }
+                activities_saved_count++;
             }
             bgprocessids[bgcount] = ppid;
             bgcommands[bgcount++] = strdup(tokens[0]);
@@ -121,6 +250,64 @@ int main()
             {
                 // Exit the shell
                 break;
+            }
+            else if (strcmp(tokens[0], "fg") == 0 || strcmp(tokens[0], "bg") == 0)
+            {
+                if (token_count < 2 || token_count > 2)
+                    printf("Incorrect Arguments\n");
+                else
+                {
+                    pid_t pid = atoi(tokens[1]);
+                    int t = kill(pid, SIGCONT);
+                    if (strcmp(tokens[0], "fg") == 0)
+                    {
+                        running_foreground_process = pid;
+                        waitpid(pid, NULL, WUNTRACED);
+                        running_foreground_process = 0;
+                    }
+                }
+            }
+            else if ((strcmp(tokens[0], "iMan") == 0))
+            {
+                if (token_count > 1)
+                {
+                    fetchManPage(tokens[1]);
+                }
+            }
+            else if (strcmp(tokens[0], "neonate") == 0)
+            {
+                if (token_count > 1 && (tokens[1], "-n"))
+                {
+                    if (token_count > 2)
+                    {
+                        int time_interval = atoi(tokens[2]);
+                        int t = run_neonate(time_interval);
+                    }
+                    else
+                    {
+                        printf("Not enough arguments\n");
+                    }
+                }
+                else
+                {
+                    printf("Flag not provided\n");
+                }
+            }
+            else if (strcmp(tokens[0], "ping") == 0)
+            {
+                if (token_count == 3)
+                {
+                    send_ping(atoi(tokens[1]), atoi(tokens[2]));
+                }
+                else
+                {
+                    printf("Wrong number of arguments\n");
+                }
+            }
+            else if (strcmp(tokens[0], "activities") == 0)
+            {
+                // printf("%s", activities_saved[0]);
+                print_activities(activities_saved, &activities_saved_count);
             }
             else if (strcmp(tokens[0], "warp") == 0)
             {
@@ -311,7 +498,7 @@ int main()
             else
             {
                 // Execute other commands
-                execute_command(tokens, 0);
+                execute_command(tokens, 0, activities_saved, &activities_saved_count, bgprocessids, bgcommands, &bgcount);
             }
             //----------------------------------------------------------------------------
             if (strncmp(input, "pastevents", 10) != 0 && strncmp(input, "pastevents purge", 16) != 0)
@@ -351,12 +538,41 @@ int main()
                 }
             }
             getcwd(current_dir, sizeof(current_dir));
-            if (is_delimitor)
+            if (token_delimiting_operators == 3)
             {
-                is_delimitor = 0;
-                goto tokenize_continue;
+                was_pipe = 1;
             }
         }
+        if (ret == 0)
+        {
+            exit(0);
+            ret = -1;
+        }
+    end:;
+        if (was_pipe==1&&token_delimiting_operators!=3)
+        {
+            dup2(savestdout,STDOUT_FILENO);
+            dup2(savestdin,STDIN_FILENO);
+            close(savestdin);
+            close(savestdout);
+            // printf("a");
+            // fflush(stdout);
+            savestdin=dup(STDIN_FILENO);
+            savestdout=dup(STDOUT_FILENO);
+        }
+        if (is_delimitor)
+        {
+            // dup2(savestdout, STDOUT_FILENO);
+            // dup2(savestdin, STDIN_FILENO);
+            is_delimitor = 0;
+            goto tokenize_continue;
+        }
+
+        dup2(savestdout, STDOUT_FILENO);
+        dup2(savestdin, STDIN_FILENO);
+        close(savestdin);
+        close(savestdout);
+        fflush(stdout);
     }
     return 0;
 }
